@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://cyberreplay.com"><img src="assets/cyberreplay-logo.png" width="96" alt="CyberReplay logo" /></a>
+  <a href="https://cyberreplay.com"><img src="https://cyberreplay.com/favicon.svg" width="96" alt="CyberReplay logo" /></a>
 </p>
 
 <h1 align="center">rtk-devin</h1>
@@ -208,9 +208,22 @@ rather than opening a public issue.
 
 ---
 
-<p align="center">
-  Built by <a href="https://cyberreplay.com">CyberReplay</a>: cybersecurity
-  services and tools for modern teams.
-  <br />
-  <a href="https://cyberreplay.com">cyberreplay.com</a>
-</p>
+## Your agents ship fast. Your security should keep up.
+
+RTK saves you tokens. Breaches cost you the company.
+
+[CyberReplay](https://cyberreplay.com) protects teams that move at AI speed:
+
+- **24/7 MDR**: monitored detection and response while you sleep
+- **Agentic Application Security**: security built for how software gets built now
+- **Penetration Testing**: see what attackers see, before they do
+
+Book a free 15-minute gap review. You leave knowing your real exposure,
+what fixing it costs, and whether we are even the right fit.
+
+No pitch deck. No pressure. Just clarity.
+
+**[Grab a time on our calendar](https://cal.com/cyberreplay/15mincr)**
+
+*P.S. Worst case: you lose 15 minutes and learn exactly where you stand.
+Best case: you just avoided your first breach.*
