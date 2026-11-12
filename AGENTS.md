@@ -1,9 +1,14 @@
 # RTK (Rust Token Killer)
 
-RTK is installed on this machine and a `PreToolUse` hook rewrites supported
-shell commands automatically (`git status` becomes `rtk git status`), so `exec`
-output is already compact. Keep running commands normally; do not prefix `rtk`
+RTK is installed on this machine. A `PreToolUse` hook rewrites supported
+shell commands automatically (`git status` becomes `rtk git status`), and a
+`PostToolUse` hook compresses exec output after it runs, so `exec` output is
+already compact. Keep running commands normally; do not prefix `rtk`
 yourself.
+
+When output shows `[N lines elided]` or a `[full output: rtk recall <hash>]`
+pointer, run `rtk recall <hash>` through `exec` to recover the full text if
+you need it.
 
 For workflows that would use built-in file or search tools (which bypass the
 hook), prefer the RTK equivalents through `exec` to get the same compact

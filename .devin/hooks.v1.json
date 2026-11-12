@@ -10,5 +10,17 @@
         }
       ]
     }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "^exec$",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "/usr/bin/python3 $HOME/.local/share/rtk-devin/rtk-posthook.py",
+          "timeout": 10
+        }
+      ]
+    }
   ]
 }

@@ -22,8 +22,11 @@
 Every command Devin's `exec` tool runs sends its full output into the agent's
 context window. Build logs, test suites, and `git status` spam burn tokens fast.
 
-`rtk-devin` registers a Devin `PreToolUse` hook that transparently rewrites
-supported commands to their RTK equivalents before they run:
+`rtk-devin` registers two Devin hooks that compress at both ends of the
+command lifecycle:
+
+**Before execution** (`PreToolUse`): supported commands are transparently
+rewritten to their RTK equivalents:
 
 ```
 git status        ->  rtk git status        (3-line summary instead of 40 lines)
@@ -31,9 +34,17 @@ cargo test        ->  rtk cargo test        (failures only, not 500 passing line
 git log --oneline ->  rtk git log --oneline (compact history)
 ```
 
-You never type `rtk`. The hook intercepts, rewrites, and the agent reads the
-compressed output. Compound commands (`&&`, `;`, pipes) are rewritten
-per-segment, and anything RTK does not recognize passes through unchanged.
+**After execution** (`PostToolUse`): output from *every* command, including
+ones RTK cannot rewrite (heredocs, `python3` scripts, custom tools), is
+compressed before the agent reads it: ANSI codes stripped, progress bars
+removed, repeated lines collapsed, long output windowed, and oversized blobs
+elided. The full original is always recoverable via `rtk recall <hash>`, and
+the hook never makes output worse or blocks a command.
+
+You never type `rtk`. The hooks intercept, rewrite, and compress
+transparently. Compound commands (`&&`, `;`, pipes) are rewritten
+per-segment, and anything RTK does not recognize still gets its output
+compressed after it runs.
 
 Upstream RTK does not ship a Devin installer yet
 ([rtk-ai/rtk#4097](https://github.com/rtk-ai/rtk/issues/4097)), so this repo
@@ -41,10 +52,13 @@ provides a drop-in integration plus a one-command installer for macOS.
 
 ## Features
 
-- **Transparent rewriting**: no agent or workflow changes required
+- **Two-stage compression**: command rewriting before execution, output
+  compression after, covering every `exec` call
+- **Transparent**: no agent or workflow changes required
 - **Idempotent installer**: safe to re-run, backs up your config before writing
 - **Global or per-project**: one flag chooses `~/.config/devin` or `.devin/`
 - **Fail-safe**: malformed input, missing `rtk`, or hook errors never block a command
+- **Recoverable**: full output stays available through `rtk recall`
 - **Savings tracking**: `rtk gain` shows tokens saved across all sessions
 
 ## Install (macOS)
@@ -67,8 +81,12 @@ The installer will:
 
 1. Check for `rtk` and offer to install it via Homebrew if missing
 2. Smoke-test `rtk hook claude` against a sample Devin hook payload
-3. Merge the hook into `~/.config/devin/config.json` (backs up to `.bak.<timestamp>` first)
-4. Skip cleanly if the hook is already installed
+3. Install `rtk-posthook.py` to `~/.local/share/rtk-devin/`
+4. Ensure your RTK pipeline extends `rtk:posthook` (required for output
+   compression; existing custom pipelines are left untouched with a warning)
+5. Merge both hooks into `~/.config/devin/config.json` (backs up to
+   `.bak.<timestamp>` first)
+6. Skip cleanly if everything is already installed
 
 ### Options
 
@@ -87,17 +105,18 @@ The installer will:
 
 ## Verify it is working
 
-1. Restart open Devin.ai sessions (hooks load at session start).
+1. Restart open Devin.ai sessions (hooks load at session start; run `/hooks`
+   in the Devin CLI to list them).
 2. Ask Devin to run `git status` in any repository.
 3. You will see RTK's compact summary instead of raw git output.
-4. Check cumulative savings at any time:
+4. Ask Devin to run something verbose (a build or test suite). Long output
+   comes back windowed with `[N lines elided]` markers and a
+   `[full output: rtk recall <hash>]` pointer instead of the raw dump.
+5. Check cumulative savings at any time:
 
 ```bash
 rtk gain
 ```
-
-In the Devin CLI you can also run `/hooks` to list loaded hooks and their
-source files.
 
 ## How it works
 
@@ -105,25 +124,41 @@ source files.
 Devin exec tool call
         |
         v
-PreToolUse hook: /opt/homebrew/bin/rtk hook claude
-        |
+PreToolUse hook: rtk hook claude
         |-- reads JSON payload from stdin (tool_name, tool_input.command)
         |-- rewrites supported commands to rtk equivalents
         |-- prints {"hookSpecificOutput": {"updatedInput": {"command": "..."}}}
         v
-Devin merges updatedInput and runs the rewritten command
+Devin merges updatedInput and runs the (possibly rewritten) command
         |
         v
-Agent receives compressed output; savings tracked by rtk gain
+PostToolUse hook: rtk-posthook.py
+        |-- translates the Devin payload into RTK's expected shape
+        |-- runs `rtk hook claude`, which applies the rtk:posthook pipeline
+        |-- term chain: ansi strip, progress filter, dedup, base64 elide, cap
+        |-- prints {"hookSpecificOutput": {"updatedToolOutput": "..."}}
+        v
+Agent receives compressed output; full text recoverable via rtk recall
 ```
 
 Devin implements Claude Code's hook schema natively
-(`hookSpecificOutput.updatedInput`, `permissionDecisionReason`), so RTK's
-existing Claude hook processor works unmodified. No wrapper script needed.
+(`hookSpecificOutput.updatedInput` for PreToolUse,
+`hookSpecificOutput.updatedToolOutput` for PostToolUse), so RTK's existing
+hook processor does the heavy lifting. `rtk-posthook.py` is a thin adapter
+that translates Devin's `tool_response` shape into the Claude shape RTK
+expects and maps the result back. It is fail-safe: any error, empty result,
+or already-compact output exits silently and Devin keeps the original text.
 
-The hook only fires on the `exec` tool (`matcher: "^exec$"`). File and search
-tools bypass it; use `rtk read`, `rtk grep`, and `rtk find` through `exec` for
-the same compact output there. `AGENTS.md` in this repo shows the pattern.
+Both hooks only fire on the `exec` tool (`matcher: "^exec$"`). File and
+search tools bypass them; use `rtk read`, `rtk grep`, and `rtk find` through
+`exec` for the same compact output there. `AGENTS.md` in this repo shows the
+pattern.
+
+The PostToolUse layer needs RTK's `rtk:posthook` pipeline active. The
+installer writes a `pipeline.toml` containing `extends = "rtk:posthook"`
+into RTK's user config directory (global installs) or the project's `.rtk/`
+directory (project installs). If you already manage a custom pipeline, add
+that `extends` line yourself or the output hook stays inert.
 
 ## Configuration
 
@@ -145,6 +180,18 @@ To customize, edit the `hooks` block in `~/.config/devin/config.json`:
         }
       ]
     }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "^exec$",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "/usr/bin/python3 $HOME/.local/share/rtk-devin/rtk-posthook.py",
+          "timeout": 10
+        }
+      ]
+    }
   ]
 }
 ```
@@ -152,7 +199,7 @@ To customize, edit the `hooks` block in `~/.config/devin/config.json`:
 | Field | Description |
 | --- | --- |
 | `matcher` | Regex on the tool name. `^exec$` covers shell commands only |
-| `command` | The hook processor. `rtk hook claude` handles the payload format |
+| `command` | PreToolUse runs `rtk hook claude`; PostToolUse runs the adapter script |
 | `timeout` | Seconds before the hook is abandoned (command still runs) |
 
 ## Uninstall
@@ -162,8 +209,9 @@ To customize, edit the `hooks` block in `~/.config/devin/config.json`:
 ./install.sh --uninstall --project .  # this project only
 ```
 
-This removes only the RTK hook entries and leaves all other hooks and settings
-untouched.
+This removes only the RTK hook entries, the posthook script (when no other
+scope still references it), and installer-managed `pipeline.toml` files. All
+other hooks, pipelines, and settings are left untouched.
 
 ## Documentation
 
