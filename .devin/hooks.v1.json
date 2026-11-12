@@ -13,7 +13,7 @@
   ],
   "PostToolUse": [
     {
-      "matcher": "^exec$",
+      "matcher": "^(exec|get_output|write_to_process|kill_shell|read|notebook_read|grep|webfetch|web_search|run_subagent|read_subagent|mcp_.*)$",
       "hooks": [
         {
           "type": "command",

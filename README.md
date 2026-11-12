@@ -34,12 +34,18 @@ cargo test        ->  rtk cargo test        (failures only, not 500 passing line
 git log --oneline ->  rtk git log --oneline (compact history)
 ```
 
-**After execution** (`PostToolUse`): output from *every* command, including
-ones RTK cannot rewrite (heredocs, `python3` scripts, custom tools), is
+**After execution** (`PostToolUse`): output from supported tools is
 compressed before the agent reads it: ANSI codes stripped, progress bars
 removed, repeated lines collapsed, long output windowed, and oversized blobs
 elided. The full original is always recoverable via `rtk recall <hash>`, and
 the hook never makes output worse or blocks a command.
+
+Coverage includes the whole shell family (`exec`, `get_output`,
+`write_to_process`, `kill_shell`), file reads (`read`, `notebook_read`),
+search (`grep`), the web (`webfetch`, `web_search`), subagent reports
+(`run_subagent`, `read_subagent`), and every MCP tool (`mcp_*`). Tools with
+small or safety-critical output (`write`, `edit`, `skill`,
+`ask_user_question`, ...) are deliberately not matched.
 
 You never type `rtk`. The hooks intercept, rewrite, and compress
 transparently. Compound commands (`&&`, `;`, pipes) are rewritten
@@ -53,7 +59,7 @@ provides a drop-in integration plus a one-command installer for macOS.
 ## Features
 
 - **Two-stage compression**: command rewriting before execution, output
-  compression after, covering every `exec` call
+  compression after, across shell, file, search, web, subagent, and MCP tools
 - **Transparent**: no agent or workflow changes required
 - **Idempotent installer**: safe to re-run, backs up your config before writing
 - **Global or per-project**: one flag chooses `~/.config/devin` or `.devin/`
@@ -134,26 +140,39 @@ Devin merges updatedInput and runs the (possibly rewritten) command
         |
         v
 PostToolUse hook: rtk-posthook.py
-        |-- translates the Devin payload into RTK's expected shape
+        |-- translates each Devin tool payload into RTK's expected shape
         |-- runs `rtk hook claude`, which applies the rtk:posthook pipeline
-        |-- term chain: ansi strip, progress filter, dedup, base64 elide, cap
+        |-- term chain (shell/mcp/subagent): ansi, progress, dedup,
+        |   base64 elide, cap; web chain for webfetch; matches for grep
         |-- prints {"hookSpecificOutput": {"updatedToolOutput": "..."}}
         v
 Agent receives compressed output; full text recoverable via rtk recall
 ```
 
-Devin implements Claude Code's hook schema natively
+Devin normalizes every tool's result into `tool_response: {success, output,
+error}` — the model-facing text is always `output`. `rtk-posthook.py`
+translates that envelope into the per-tool `tool_response` shapes RTK's
+posthook extractor expects (`Bash`/`Read`/`Grep`/`WebFetch`/`WebSearch`/`Task`/
+`mcp__*`), runs `rtk hook claude`, and maps the rebuilt output back into the
+same envelope. Devin implements Claude Code's hook schema natively
 (`hookSpecificOutput.updatedInput` for PreToolUse,
 `hookSpecificOutput.updatedToolOutput` for PostToolUse), so RTK's existing
-hook processor does the heavy lifting. `rtk-posthook.py` is a thin adapter
-that translates Devin's `tool_response` shape into the Claude shape RTK
-expects and maps the result back. It is fail-safe: any error, empty result,
-or already-compact output exits silently and Devin keeps the original text.
+hook processor does the heavy lifting. The adapter is fail-safe: any error,
+empty result, or already-compact output exits silently and Devin keeps the
+original text.
 
-Both hooks only fire on the `exec` tool (`matcher: "^exec$"`). File and
-search tools bypass them; use `rtk read`, `rtk grep`, and `rtk find` through
-`exec` for the same compact output there. `AGENTS.md` in this repo shows the
-pattern.
+Both hooks use tool-name matchers. `PreToolUse` stays `^exec$` (only shell
+commands can be rewritten). `PostToolUse` matches the compressible tool set:
+`exec`, `get_output`, `write_to_process`, `kill_shell`, `read`,
+`notebook_read`, `grep`, `webfetch`, `web_search`, `run_subagent`,
+`read_subagent`, and `mcp_*`. `edit`/`write` outputs are intentionally
+excluded — they are tiny acknowledgements, and compressing file content the
+agent may need to anchor edits on is deliberately avoided (upstream RTK
+ships no enabled read-compression rules for the same reason; only lockfile
+reads compress).
+
+`AGENTS.md` in this repo shows the `rtk read`/`rtk grep`/`rtk find` pattern
+for squeezing built-in-tool workflows further.
 
 The PostToolUse layer needs RTK's `rtk:posthook` pipeline active. The
 installer writes a `pipeline.toml` containing `extends = "rtk:posthook"`
@@ -186,7 +205,7 @@ To customize, edit the `hooks` block in `~/.config/devin/config.json`:
   ],
   "PostToolUse": [
     {
-      "matcher": "^exec$",
+      "matcher": "^(exec|get_output|write_to_process|kill_shell|read|notebook_read|grep|webfetch|web_search|run_subagent|read_subagent|mcp_.*)$",
       "hooks": [
         {
           "type": "command",
@@ -201,7 +220,7 @@ To customize, edit the `hooks` block in `~/.config/devin/config.json`:
 
 | Field | Description |
 | --- | --- |
-| `matcher` | Regex on the tool name. `^exec$` covers shell commands only |
+| `matcher` | Regex on the tool name. PreToolUse uses `^exec$`; PostToolUse matches the compressible tool set |
 | `command` | PreToolUse runs `rtk hook claude`; PostToolUse runs the adapter script |
 | `timeout` | Seconds before the hook is abandoned (command still runs) |
 

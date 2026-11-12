@@ -2,7 +2,8 @@
 
 RTK is installed on this machine. A `PreToolUse` hook rewrites supported
 shell commands automatically (`git status` becomes `rtk git status`), and a
-`PostToolUse` hook compresses exec output after it runs, so `exec` output is
+`PostToolUse` hook compresses output after tools run (shell commands, file
+reads, grep, webfetch, subagent reports, MCP tools), so tool output is
 already compact. Keep running commands normally; do not prefix `rtk`
 yourself.
 

@@ -96,7 +96,32 @@ jobs:
           PY
           out="$(python3 "$SCRIPT" < /tmp/posthook-in.json)"
           echo "$out" | grep -q 'updatedToolOutput'
-          # passthrough cases must stay silent
+          # other covered tools compress too (uniform {success,output,error} envelope)
+          python3 - <<'PY'
+          import json
+          big = "\n".join("record %d: status=ok latency=%dms" % (i, i * 3) for i in range(350))
+          webby = ("# Article\n\n" + "\x1b[32mOK\x1b[0m " * 50 + "\n"
+                   + "![i](data:image/png;base64," + "A" * 3000 + ")\n\n"
+                   + "\n".join("Para %d." % i for i in range(150)))
+          cases = [
+              ("get_output", "get_output", {"shell_id": "s1"}, big),
+              ("webfetch", "webfetch", {"url": "https://example.com"}, webby),
+              ("mcp", "mcp_call_tool", {"server": "s", "tool": "t"}, big),
+              ("subagent", "run_subagent", {"task": "t"}, big),
+          ]
+          for name, tool, ti, output in cases:
+              payload = {"hook_event_name": "PostToolUse", "tool_name": tool,
+                         "tool_input": ti,
+                         "tool_response": {"success": True, "output": output, "error": None}}
+              open("/tmp/ph-%s.json" % name, "w").write(json.dumps(payload))
+          PY
+          for t in get_output webfetch mcp subagent; do
+            o="$(python3 "$SCRIPT" < /tmp/ph-$t.json)"
+            echo "$o" | grep -q 'updatedToolOutput' || { echo "no compression for $t"; exit 1; }
+          done
+          # uncovered tools and passthrough cases must stay silent
           small='{"hook_event_name":"PostToolUse","tool_name":"exec","tool_input":{"command":"echo hi"},"tool_response":{"success":true,"output":"hi","error":null}}'
           test -z "$(printf '%s' "$small" | python3 "$SCRIPT")"
+          uncovered='{"hook_event_name":"PostToolUse","tool_name":"write","tool_input":{},"tool_response":{"success":true,"output":"'"$(python3 -c 'print("x"*600)')"'","error":null}}'
+          test -z "$(printf '%s' "$uncovered" | python3 "$SCRIPT")"
           ./install.sh --uninstall --project /tmp/rtk-ci-proj >/dev/null

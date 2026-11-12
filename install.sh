@@ -21,6 +21,9 @@
 set -euo pipefail
 
 HOOK_MATCHER='^exec$'
+# PostToolUse covers every tool whose output can be large: shell family,
+# file reads, search, web, subagent reports, and all MCP tools (mcp_*).
+POST_HOOK_MATCHER='^(exec|get_output|write_to_process|kill_shell|read|notebook_read|grep|webfetch|web_search|run_subagent|read_subagent|mcp_.*)$'
 HOOK_TIMEOUT=10
 SCRIPT_NAME='rtk-posthook.py'
 SCRIPT_REPO_PATH='rtk-posthook.py'
@@ -226,19 +229,29 @@ ensure_pipeline() {
 
   if [ -f "$target" ]; then
     if grep -q "$PIPELINE_MARKER" "$target" 2>/dev/null; then
-      if grep -q 'rtk:posthook' "$target"; then
-        info "pipeline already extends rtk:posthook: $target"
+      if grep -q 'rtk:posthook' "$target" && grep -q 'hook.after_tool.mcp' "$target"; then
+        info "pipeline already up to date: $target"
         return 0
       fi
       if [ "$DRY_RUN" = 0 ]; then
         cat > "$target" <<'TOML'
-# rtk-devin managed pipeline: compress exec output after it runs.
+# rtk-devin managed pipeline: compress tool output after it runs.
 # Safe to delete this file to restore rtk defaults.
 schema_version = 1
 
 [pipeline]
 name    = "rtk-devin-posthook"
 extends = "rtk:posthook"
+
+# MCP tool results and subagent reports get the same term chain as shell
+# output (ansi strip, progress filter, dedup, base64 elide, cap).
+[[hook.after_tool.mcp]]
+name = "mcp-term"
+use  = ["term"]
+
+[[hook.after_tool.subagent]]
+name = "subagent-term"
+use  = ["term"]
 TOML
         info "updated pipeline: $target"
       else
@@ -262,13 +275,23 @@ TOML
   fi
   mkdir -p "$dir"
   cat > "$target" <<'TOML'
-# rtk-devin managed pipeline: compress exec output after it runs.
+# rtk-devin managed pipeline: compress tool output after it runs.
 # Safe to delete this file to restore rtk defaults.
 schema_version = 1
 
 [pipeline]
 name    = "rtk-devin-posthook"
 extends = "rtk:posthook"
+
+# MCP tool results and subagent reports get the same term chain as shell
+# output (ansi strip, progress filter, dedup, base64 elide, cap).
+[[hook.after_tool.mcp]]
+name = "mcp-term"
+use  = ["term"]
+
+[[hook.after_tool.subagent]]
+name = "subagent-term"
+use  = ["term"]
 TOML
   info "created pipeline: $target"
 }
@@ -293,7 +316,9 @@ remove_pipeline() {
 
 json_merge() {
   MODE="$1" UNINSTALL="$2" PRE_CMD="$HOOK_COMMAND" POST_CMD="$POST_HOOK_COMMAND" \
-  HAVE_POSTHOOK="$HAVE_POSTHOOK" MATCHER="$HOOK_MATCHER" TIMEOUT="$HOOK_TIMEOUT" \
+  HAVE_POSTHOOK="$HAVE_POSTHOOK" MATCHER="$HOOK_MATCHER" \
+  POST_MATCHER="$POST_HOOK_MATCHER" \
+  TIMEOUT="$HOOK_TIMEOUT" \
   PROJECT_DIR="$PROJECT_DIR" DRY_RUN="$DRY_RUN" \
   python3 - <<'PYEOF'
 import json, os, sys, shutil, datetime
@@ -305,6 +330,7 @@ pre_cmd       = os.environ["PRE_CMD"]
 post_cmd      = os.environ["POST_CMD"]
 have_posthook = os.environ["HAVE_POSTHOOK"] == "1"
 matcher       = os.environ["MATCHER"]
+post_matcher  = os.environ["POST_MATCHER"]
 timeout       = int(os.environ["TIMEOUT"])
 project       = os.environ.get("PROJECT_DIR") or os.getcwd()
 
@@ -322,18 +348,22 @@ def strip_ours(groups):
     return out
 
 def block_for(event):
-    cmd = post_cmd if (event == "PostToolUse" and have_posthook) else pre_cmd
-    if event == "PostToolUse" and not have_posthook:
-        return None
+    if event == "PostToolUse":
+        if not have_posthook:
+            return None
+        return {"matcher": post_matcher,
+                "hooks": [{"type": "command", "command": post_cmd, "timeout": timeout}]}
     return {"matcher": matcher,
-            "hooks": [{"type": "command", "command": cmd, "timeout": timeout}]}
+            "hooks": [{"type": "command", "command": pre_cmd, "timeout": timeout}]}
 
 def ensure(groups, event):
     block = block_for(event)
     if block is None:
         return groups, False
     for g in groups:
-        if g.get("matcher") == matcher and any(is_ours(h.get("command", "")) for h in g.get("hooks", [])):
+        # Refresh any group that already carries one of our hooks, whatever
+        # its old matcher was (matchers evolved across releases).
+        if any(is_ours(h.get("command", "")) for h in g.get("hooks", [])):
             if json.dumps(g, sort_keys=True) == json.dumps(block, sort_keys=True):
                 return groups, False
             g.clear(); g.update(block)
