@@ -92,9 +92,9 @@ jobs:
           open("/tmp/posthook-in.json", "w").write(json.dumps(payload))
           PY
           # run from the project dir so rtk picks up .rtk/pipeline.toml
-          out="$(cd /tmp/rtk-ci-proj && /usr/bin/python3 "$SCRIPT" < /tmp/posthook-in.json)"
+          out="$(cd /tmp/rtk-ci-proj && python3 "$SCRIPT" < /tmp/posthook-in.json)"
           echo "$out" | grep -q 'updatedToolOutput'
           # passthrough cases must stay silent
           small='{"hook_event_name":"PostToolUse","tool_name":"exec","tool_input":{"command":"echo hi"},"tool_response":{"success":true,"output":"hi","error":null}}'
-          test -z "$(cd /tmp/rtk-ci-proj && printf '%s' "$small" | /usr/bin/python3 "$SCRIPT")"
+          test -z "$(cd /tmp/rtk-ci-proj && printf '%s' "$small" | python3 "$SCRIPT")"
           ./install.sh --uninstall --project /tmp/rtk-ci-proj >/dev/null
