@@ -163,7 +163,7 @@ To customize, edit the `hooks` block in `~/.config/devin/config.json`:
 ```
 
 This removes only the RTK hook entries and leaves all other hooks and settings
-untouched. A timestamped backup of any modified file is kept next to it.
+untouched.
 
 ## Documentation
 
@@ -194,8 +194,8 @@ it). Test the full lifecycle locally:
 
 This project runs a local hook on every shell command Devin executes. The hook
 binary is `rtk` from [rtk-ai/rtk](https://github.com/rtk-ai/rtk); review it
-before installing. The installer never transmits your config anywhere and makes
- timestamped local backups before modifying files.
+before installing. The installer never transmits your config anywhere and
+makes timestamped local backups before modifying files.
 
 If you believe you have found a security vulnerability in this project, please
 disclose it privately via
