@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: install.sh and hook tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install rtk
+        run: |
+          set -euo pipefail
+          tag="$(curl -fsSL https://api.github.com/repos/rtk-ai/rtk/releases/latest \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          echo "rtk version: $tag"
+          curl -fsSL -o /tmp/rtk.tar.gz \
+            "https://github.com/rtk-ai/rtk/releases/download/${tag}/rtk-x86_64-unknown-linux-gnu.tar.gz"
+          tar -xzf /tmp/rtk.tar.gz -C /tmp
+          sudo install -m 0755 /tmp/rtk /usr/local/bin/rtk
+          rtk --version
+
+      - name: Shellcheck
+        run: shellcheck install.sh
+
+      - name: Validate JSON files
+        run: python3 -m json.tool .devin/hooks.v1.json > /dev/null
+
+      - name: Hook rewrites exec commands
+        run: |
+          set -euo pipefail
+          out="$(printf '%s' '{"hook_event_name":"PreToolUse","tool_name":"exec","tool_input":{"command":"git status","shell_id":"main"}}' \
+            | rtk hook claude)"
+          echo "$out"
+          echo "$out" | grep -q '"command":"rtk git status"'
+          echo "$out" | grep -q '"shell_id":"main"'
+
+      - name: Hook rewrites compound commands
+        run: |
+          set -euo pipefail
+          out="$(printf '%s' '{"hook_event_name":"PreToolUse","tool_name":"exec","tool_input":{"command":"echo hi && git status"}}' \
+            | rtk hook claude)"
+          echo "$out" | grep -q 'rtk git status'
+
+      - name: Hook passes through non-rewrites
+        run: |
+          set -euo pipefail
+          # already-rewritten command: no output
+          test -z "$(printf '%s' '{"hook_event_name":"PreToolUse","tool_name":"exec","tool_input":{"command":"rtk git status"}}' \
+            | rtk hook claude)"
+          # non-exec tool: no output
+          test -z "$(printf '%s' '{"hook_event_name":"PreToolUse","tool_name":"read","tool_input":{"file_path":"/tmp/x"}}' \
+            | rtk hook claude)"
+
+      - name: install.sh dry run
+        run: ./install.sh --dry-run
+
+      - name: install.sh project lifecycle
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/rtk-ci-proj
+          ./install.sh --project /tmp/rtk-ci-proj
+          python3 -m json.tool /tmp/rtk-ci-proj/.devin/hooks.v1.json > /dev/null
+          ./install.sh --project /tmp/rtk-ci-proj
+          ./install.sh --uninstall --project /tmp/rtk-ci-proj
+          test ! -f /tmp/rtk-ci-proj/.devin/hooks.v1.json

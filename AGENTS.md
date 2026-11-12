@@ -1,10 +1,11 @@
 # RTK (Rust Token Killer)
 
-RTK is installed at `/opt/homebrew/bin/rtk`. A `PreToolUse` hook rewrites
-supported shell commands automatically (`git status` → `rtk git status`), so
-exec output is already compact — keep running commands normally.
+RTK is installed on this machine and a `PreToolUse` hook rewrites supported
+shell commands automatically (`git status` becomes `rtk git status`), so `exec`
+output is already compact. Keep running commands normally; do not prefix `rtk`
+yourself.
 
-For workflows that would use built-in file/search tools (which bypass the
+For workflows that would use built-in file or search tools (which bypass the
 hook), prefer the RTK equivalents through `exec` to get the same compact
 output:
 
