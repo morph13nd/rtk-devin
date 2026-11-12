@@ -19,7 +19,7 @@ jobs:
             | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
           echo "rtk version: $tag"
           curl -fsSL -o /tmp/rtk.tar.gz \
-            "https://github.com/rtk-ai/rtk/releases/download/${tag}/rtk-x86_64-unknown-linux-gnu.tar.gz"
+            "https://github.com/rtk-ai/rtk/releases/download/${tag}/rtk-x86_64-unknown-linux-musl.tar.gz"
           tar -xzf /tmp/rtk.tar.gz -C /tmp
           sudo install -m 0755 /tmp/rtk /usr/local/bin/rtk
           rtk --version
