@@ -208,13 +208,11 @@ rtk_user_config_dir() {
   esac
 }
 
-pipeline_dir() {
-  if [ "$GLOBAL" = 1 ]; then
-    rtk_user_config_dir
-  else
-    echo "$PROJECT_DIR/.rtk"
-  fi
-}
+# The pipeline.toml always lives in rtk's user config dir, for both install
+# modes. Project-level .rtk/pipeline.toml files are trust-gated (rtk trust)
+# and trusting a directory would also trust unrelated filters.toml files.
+# The user-level pipeline only adds hook.after_tool rules, which fire solely
+# on PostToolUse hook events, so it is inert without our Devin hooks.
 
 PIPELINE_MARKER='rtk-devin'
 
@@ -223,7 +221,7 @@ ensure_pipeline() {
   # hook.after_tool rules fire. Only manages files it created (marker).
   [ "$HAVE_POSTHOOK" = 1 ] || return 0
   local dir target
-  dir="$(pipeline_dir)"
+  dir="$(rtk_user_config_dir)"
   target="$dir/pipeline.toml"
 
   if [ -f "$target" ]; then
@@ -278,7 +276,13 @@ TOML
 remove_pipeline() {
   [ "$DRY_RUN" = 1 ] && return 0
   local target
-  target="$(pipeline_dir)/pipeline.toml"
+  target="$(rtk_user_config_dir)/pipeline.toml"
+  # Shared resource: keep it while global Devin hooks still use PostToolUse.
+  if [ "$GLOBAL" = 0 ] && [ -f "$HOME/.config/devin/config.json" ] \
+     && grep -q 'rtk-posthook.py' "$HOME/.config/devin/config.json"; then
+    info "keeping pipeline (global hooks still reference it): $target"
+    return 0
+  fi
   if [ -f "$target" ] && grep -q "$PIPELINE_MARKER" "$target" 2>/dev/null; then
     rm -f "$target"
     info "removed pipeline: $target"

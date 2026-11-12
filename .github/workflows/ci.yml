@@ -68,11 +68,14 @@ jobs:
           mkdir -p /tmp/rtk-ci-proj
           ./install.sh --project /tmp/rtk-ci-proj
           python3 -m json.tool /tmp/rtk-ci-proj/.devin/hooks.v1.json > /dev/null
-          test -f /tmp/rtk-ci-proj/.rtk/pipeline.toml
+          # project installs manage the user-level rtk pipeline.toml
+          RTK_CFG_DIR="$(rtk config | sed -n 's/^Config: //p' | head -1 | xargs dirname)"
+          grep -q 'rtk:posthook' "$RTK_CFG_DIR/pipeline.toml"
           ./install.sh --project /tmp/rtk-ci-proj
           ./install.sh --uninstall --project /tmp/rtk-ci-proj
           test ! -f /tmp/rtk-ci-proj/.devin/hooks.v1.json
-          test ! -f /tmp/rtk-ci-proj/.rtk/pipeline.toml
+          # no global Devin config on the runner, so pipeline.toml is removed too
+          test ! -f "$RTK_CFG_DIR/pipeline.toml"
 
       - name: PostToolUse hook compresses exec output
         run: |
@@ -80,9 +83,9 @@ jobs:
           mkdir -p /tmp/rtk-ci-proj
           ./install.sh --project /tmp/rtk-ci-proj >/dev/null
           SCRIPT="$HOME/.local/share/rtk-devin/rtk-posthook.py"
-          test -x "$SCRIPT" || test -f "$SCRIPT"
-          python3 - "$SCRIPT" <<'PY'
-          import json, sys
+          test -f "$SCRIPT"
+          python3 - <<'PY'
+          import json
           lines = ["Output from command in shell ci:"]
           lines += ["line %04d repeated payload content for compression" % i for i in range(400)]
           lines += ["", "", "Exit code: 0"]
@@ -91,10 +94,9 @@ jobs:
                      "tool_response": {"success": True, "output": "\n".join(lines), "error": None}}
           open("/tmp/posthook-in.json", "w").write(json.dumps(payload))
           PY
-          # run from the project dir so rtk picks up .rtk/pipeline.toml
-          out="$(cd /tmp/rtk-ci-proj && python3 "$SCRIPT" < /tmp/posthook-in.json)"
+          out="$(python3 "$SCRIPT" < /tmp/posthook-in.json)"
           echo "$out" | grep -q 'updatedToolOutput'
           # passthrough cases must stay silent
           small='{"hook_event_name":"PostToolUse","tool_name":"exec","tool_input":{"command":"echo hi"},"tool_response":{"success":true,"output":"hi","error":null}}'
-          test -z "$(cd /tmp/rtk-ci-proj && printf '%s' "$small" | python3 "$SCRIPT")"
+          test -z "$(printf '%s' "$small" | python3 "$SCRIPT")"
           ./install.sh --uninstall --project /tmp/rtk-ci-proj >/dev/null

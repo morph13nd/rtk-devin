@@ -83,7 +83,8 @@ The installer will:
 2. Smoke-test `rtk hook claude` against a sample Devin hook payload
 3. Install `rtk-posthook.py` to `~/.local/share/rtk-devin/`
 4. Ensure your RTK pipeline extends `rtk:posthook` (required for output
-   compression; existing custom pipelines are left untouched with a warning)
+   compression; writes `pipeline.toml` into RTK's user config directory,
+   existing custom pipelines are left untouched with a warning)
 5. Merge both hooks into `~/.config/devin/config.json` (backs up to
    `.bak.<timestamp>` first)
 6. Skip cleanly if everything is already installed
@@ -156,9 +157,11 @@ pattern.
 
 The PostToolUse layer needs RTK's `rtk:posthook` pipeline active. The
 installer writes a `pipeline.toml` containing `extends = "rtk:posthook"`
-into RTK's user config directory (global installs) or the project's `.rtk/`
-directory (project installs). If you already manage a custom pipeline, add
-that `extends` line yourself or the output hook stays inert.
+into RTK's user config directory (for both global and project installs;
+project-level `.rtk/` pipelines are trust-gated, and the user-level file
+only adds `hook.after_tool` rules that fire on PostToolUse events alone).
+If you already manage a custom pipeline, add that `extends` line yourself
+or the output hook stays inert.
 
 ## Configuration
 
