@@ -13,8 +13,10 @@ emits hookSpecificOutput.updatedToolOutput with the compressed text.
 Supported tools: exec, get_output, write_to_process, kill_shell (shell
 term chain); read, notebook_read (lockfile rule); grep (matches rule);
 webfetch, web_search (web chain); run_subagent, read_subagent, and all
-mcp_* tools (term chain via custom pipeline rules). Everything else exits
-silently.
+mcp_* tools (term chain via custom pipeline rules). glob, edit, write,
+notebook_edit and todo_write are mapped for forward compatibility but
+currently pass through: rtk's posthook engine has no extraction path for
+their output shapes. Everything else exits silently.
 
 Fail-safe by design: any error or empty result exits silently, leaving the
 original output untouched. Requires python3.9+.
@@ -46,6 +48,11 @@ TOOL_MAP = {
     "read": "Read",
     "notebook_read": "Read",
     "grep": "Grep",
+    "glob": "Glob",
+    "edit": "Edit",
+    "write": "Write",
+    "notebook_edit": "NotebookEdit",
+    "todo_write": "TodoWrite",
     "webfetch": "WebFetch",
     "web_search": "WebSearch",
     "run_subagent": "Task",
@@ -81,6 +88,11 @@ def build_claude_response(claude, out, err, tool_input):
         return {"file": {"content": out, "numLines": lines,
                          "totalLines": lines, "filePath": path},
                 "type": "text"}
+    if claude == "Glob":
+        # rtk's Glob extractor reads tool_response.filenames (array) and
+        # rebuilds via the generic result arm, so send both shapes.
+        return {"filenames": [l for l in out.split("\n") if l],
+                "result": out}
     if claude == "Grep":
         return {"mode": "content", "content": out}
     if claude == "WebFetch":

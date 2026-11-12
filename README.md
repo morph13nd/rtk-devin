@@ -43,9 +43,16 @@ the hook never makes output worse or blocks a command.
 Coverage includes the whole shell family (`exec`, `get_output`,
 `write_to_process`, `kill_shell`), file reads (`read`, `notebook_read`),
 search (`grep`), the web (`webfetch`, `web_search`), subagent reports
-(`run_subagent`, `read_subagent`), and every MCP tool (`mcp_*`). Tools with
-small or safety-critical output (`write`, `edit`, `skill`,
-`ask_user_question`, ...) are deliberately not matched.
+(`run_subagent`, `read_subagent`), and every MCP tool (`mcp_*`).
+
+`glob`, `edit`, `write`, `notebook_edit`, and `todo_write` are left out of
+the hook matcher: RTK's posthook engine ships no extraction path for their
+output shapes (`extract()` returns nothing for `Write`/`Edit`/
+`NotebookEdit`, and `Glob` file lists are deliberately unclassified), so
+matching them would pay hook latency for a guaranteed no-op. Their outputs
+are small confirmations anyway. The adapter already maps their tool names,
+so if a future RTK release adds extraction for them, widening the matcher
+is the only change needed.
 
 You never type `rtk`. The hooks intercept, rewrite, and compress
 transparently. Compound commands (`&&`, `;`, pipes) are rewritten
