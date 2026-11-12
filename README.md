@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://cyberreplay.com"><img src="https://cyberreplay.com/favicon.svg" width="96" alt="CyberReplay logo" /></a>
+  <a href="https://cyberreplay.com"><img src="https://cyberreplay.com/_astro/cyber-replay-logo.CqTbeedM_23sU9p.webp" width="96" alt="CyberReplay logo" /></a>
 </p>
 
 <h1 align="center">rtk-devin</h1>
